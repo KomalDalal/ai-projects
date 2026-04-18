@@ -1,0 +1,8 @@
+numpy==1.26.4
+pandas>=1.1.3
+regex>=2.5.86
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+scikit-learn>=1.0.2
+joblib>=0.17.0
+streamlit>=1.36.0
+thinc==8.2.5
