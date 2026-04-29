@@ -91,12 +91,13 @@ if uploaded_file is not None:
     detections = parse_detections(result, conf_threshold)
     status, present_ppe, missing_required, violations = check_compliance(detections, required_ppe, use_negative_classes)
 
-    annotated_rgb = result.plot()
-    annotated_rgb = draw_title_bar(annotated_rgb, status)
+  annotated_bgr = result.plot(line_width=1, font_size=0.5)
+annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+annotated_rgb = draw_title_bar(annotated_rgb, status)
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.image(annotated_rgb, use_column_width=True)
+col1, col2 = st.columns([2, 1])
+with col1:
+    st.image(annotated_rgb, width=700)
     with col2:
         if status == "COMPLIANT":
             st.success("Status: COMPLIANT")
