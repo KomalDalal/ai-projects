@@ -89,20 +89,26 @@ if uploaded_file is not None:
     detector = load_detector(weights_path)
     result = detector.predict(source=image_bgr, conf=conf_threshold, iou=iou_threshold, verbose=False)[0]
     detections = parse_detections(result, conf_threshold)
-    status, present_ppe, missing_required, violations = check_compliance(detections, required_ppe, use_negative_classes)
+    status, present_ppe, missing_required, violations = check_compliance(
+        detections, required_ppe, use_negative_classes
+    )
 
-  annotated_bgr = result.plot(line_width=1, font_size=0.5)
-annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
-annotated_rgb = draw_title_bar(annotated_rgb, status)
+    # ✅ FIXED IMAGE HANDLING
+    annotated_bgr = result.plot(line_width=1, font_size=0.5)
+    annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+    annotated_rgb = draw_title_bar(annotated_rgb, status)
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.image(annotated_rgb, width=700)
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.image(annotated_rgb, width=700)
+
     with col2:
         if status == "COMPLIANT":
             st.success("Status: COMPLIANT")
         else:
             st.error("Status: NON-COMPLIANT")
+
         st.write("Present PPE:", ", ".join(present_ppe) if present_ppe else "None")
         st.write("Missing required PPE:", ", ".join(missing_required) if missing_required else "None")
         st.write("Detected violations:", ", ".join(violations) if violations else "None")
