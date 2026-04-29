@@ -8,10 +8,11 @@ from ultralytics import YOLO
 
 st.set_page_config(page_title="PPE Compliance Detector", layout="wide")
 st.title("PPE Compliance Detector")
-st.write("YOLO detects PPE classes, draws YOLO boxes directly with result.plot(), and displays Status: COMPLIANT / NON-COMPLIANT.")
+st.write("YOLO detects PPE classes and displays compliance status.")
 
 DEFAULT_WEIGHTS = Path("best.pt")
 REQUIRED_DEFAULT = ["Helmet", "Vest", "Boots"]
+
 POSITIVE_PPE = {"Helmet", "Gloves", "Vest", "Boots", "Goggles"}
 NEGATIVE_TO_POSITIVE = {
     "no_helmet": "Helmet",
@@ -21,9 +22,11 @@ NEGATIVE_TO_POSITIVE = {
 }
 ALL_REQUIRED_OPTIONS = ["Helmet", "Vest", "Boots", "Gloves", "Goggles"]
 
+
 @st.cache_resource
 def load_detector(weights_path):
     return YOLO(str(weights_path))
+
 
 def normalize_label(label):
     text = str(label).strip()
@@ -34,46 +37,50 @@ def normalize_label(label):
         return lower
     return text
 
+
 def parse_detections(result, conf_threshold):
     rows = []
     if result.boxes is None or len(result.boxes) == 0:
         return rows
+
     for box in result.boxes:
         conf = float(box.conf[0].item())
         if conf < conf_threshold:
             continue
+
         cls_id = int(box.cls[0].item())
         raw = result.names.get(cls_id, str(cls_id)) if isinstance(result.names, dict) else result.names[cls_id]
         label = normalize_label(raw)
+
         x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+
         rows.append({
             "class": label,
             "confidence": round(conf, 3),
             "x1": x1, "y1": y1, "x2": x2, "y2": y2,
         })
+
     return rows
+
 
 def check_compliance(detections, required_ppe, use_negative_classes=True):
     detected = {d["class"] for d in detections}
+
     present_ppe = sorted([name for name in detected if name in POSITIVE_PPE])
     missing_required = [ppe for ppe in required_ppe if ppe not in detected]
+
     violations = []
     if use_negative_classes:
         for neg, pos in NEGATIVE_TO_POSITIVE.items():
             if neg in detected and pos not in detected:
                 violations.append(neg)
+
     status = "COMPLIANT" if not missing_required and not violations else "NON-COMPLIANT"
+
     return status, present_ppe, missing_required, sorted(violations)
 
-def draw_title_bar(image_rgb, status):
-    color = (0, 150, 0) if status == "COMPLIANT" else (220, 0, 0)
-    output = image_rgb.copy()
-    h, w = output.shape[:2]
-    top = np.full((46, w, 3), 255, dtype=np.uint8)
-    text = f"Status: {status}"
-    cv2.putText(top, text, (max(10, w // 2 - 170), 32), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
-    return np.vstack([top, output])
 
+# Sidebar controls
 weights_path = st.sidebar.text_input("YOLO weights path", value=str(DEFAULT_WEIGHTS))
 conf_threshold = st.sidebar.slider("Confidence threshold", 0.05, 0.95, 0.25, 0.05)
 iou_threshold = st.sidebar.slider("IoU threshold", 0.05, 0.95, 0.45, 0.05)
@@ -82,21 +89,29 @@ use_negative_classes = st.sidebar.checkbox("Use no_* violation classes", value=T
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
+
 if uploaded_file is not None:
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     image_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
     detector = load_detector(weights_path)
-    result = detector.predict(source=image_bgr, conf=conf_threshold, iou=iou_threshold, verbose=False)[0]
+
+    result = detector.predict(
+        source=image_bgr,
+        conf=conf_threshold,
+        iou=iou_threshold,
+        verbose=False
+    )[0]
+
     detections = parse_detections(result, conf_threshold)
+
     status, present_ppe, missing_required, violations = check_compliance(
         detections, required_ppe, use_negative_classes
     )
 
-    # ✅ FIXED IMAGE HANDLING
+    # ✅ FIXED IMAGE (no blue tint, no stretch, smaller labels)
     annotated_bgr = result.plot(line_width=1, font_size=0.5)
     annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
-    annotated_rgb = draw_title_bar(annotated_rgb, status)
 
     col1, col2 = st.columns([2, 1])
 
@@ -118,5 +133,6 @@ if uploaded_file is not None:
             st.dataframe(pd.DataFrame(detections), use_container_width=True)
         else:
             st.info("No detections above threshold.")
+
 else:
     st.info("Upload an image to run PPE compliance detection.")
