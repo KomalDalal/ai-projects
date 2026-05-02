@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import cv2
 import numpy as np
@@ -57,7 +58,10 @@ def parse_detections(result, conf_threshold):
         rows.append({
             "class": label,
             "confidence": round(conf, 3),
-            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "x1": x1,
+            "y1": y1,
+            "x2": x2,
+            "y2": y2,
         })
 
     return rows
@@ -81,20 +85,56 @@ def check_compliance(detections, required_ppe, use_negative_classes=True):
 
 
 # Sidebar controls
+st.sidebar.header("Model Controls")
+
 weights_path = st.sidebar.text_input("YOLO weights path", value=str(DEFAULT_WEIGHTS))
 conf_threshold = st.sidebar.slider("Confidence threshold", 0.05, 0.95, 0.25, 0.05)
 iou_threshold = st.sidebar.slider("IoU threshold", 0.05, 0.95, 0.45, 0.05)
 required_ppe = st.sidebar.multiselect("Required PPE", ALL_REQUIRED_OPTIONS, default=REQUIRED_DEFAULT)
 use_negative_classes = st.sidebar.checkbox("Use no_* violation classes", value=True)
 
+# System health panel
+st.sidebar.header("System Health")
+
+model_status = "Not loaded"
+model_error = None
+detector = None
+
+try:
+    detector = load_detector(weights_path)
+    model_status = "Running"
+    st.sidebar.success("Model loaded successfully")
+except Exception as e:
+    model_status = "Failed"
+    model_error = str(e)
+    st.sidebar.error("Model failed to load")
+
+st.sidebar.write("Model:", weights_path)
+st.sidebar.write("Status:", model_status)
+st.sidebar.write("Confidence threshold:", conf_threshold)
+st.sidebar.write("IoU threshold:", iou_threshold)
+
+if model_error:
+    st.sidebar.write("Error:", model_error)
+    st.stop()
+
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+
+last_inference_time = None
+last_total_time = None
 
 
 if uploaded_file is not None:
+    total_start = time.time()
+
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     image_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    detector = load_detector(weights_path)
+    if image_bgr is None:
+        st.error("Unable to read image. Please upload a valid JPG, JPEG, or PNG file.")
+        st.stop()
+
+    inference_start = time.time()
 
     result = detector.predict(
         source=image_bgr,
@@ -103,13 +143,25 @@ if uploaded_file is not None:
         verbose=False
     )[0]
 
+    inference_end = time.time()
+
     detections = parse_detections(result, conf_threshold)
 
     status, present_ppe, missing_required, violations = check_compliance(
         detections, required_ppe, use_negative_classes
     )
 
-    # ✅ FIXED IMAGE (no blue tint, no stretch, smaller labels)
+    total_end = time.time()
+
+    last_inference_time = inference_end - inference_start
+    last_total_time = total_end - total_start
+
+    # Update system metrics
+    st.sidebar.metric("Last inference time", f"{last_inference_time:.3f} sec")
+    st.sidebar.metric("Total processing time", f"{last_total_time:.3f} sec")
+    st.sidebar.write("Detections found:", len(detections))
+
+    # Annotated image
     annotated_bgr = result.plot(line_width=1, font_size=0.5)
     annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
 
@@ -127,6 +179,10 @@ if uploaded_file is not None:
         st.write("Present PPE:", ", ".join(present_ppe) if present_ppe else "None")
         st.write("Missing required PPE:", ", ".join(missing_required) if missing_required else "None")
         st.write("Detected violations:", ", ".join(violations) if violations else "None")
+
+        st.subheader("Performance")
+        st.metric("Inference time", f"{last_inference_time:.3f} sec")
+        st.metric("Total processing time", f"{last_total_time:.3f} sec")
 
         st.subheader("YOLO detections")
         if detections:
